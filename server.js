@@ -35,6 +35,8 @@ wss.on('connection', (ws) => {
   ws.status     = 'disponible';
   ws.isTalking  = false;
   ws.authorized = false;
+  ws.isAlive    = true;
+  ws.on('pong', () => { ws.isAlive = true; }); // réponse au heartbeat serveur
 
   ws.on('message', (data, isBinary) => {
 
@@ -154,5 +156,15 @@ wss.on('connection', (ws) => {
 setInterval(() => {
   channels.forEach((ch, id) => { if (ch.size === 0) channels.delete(id); });
 }, 60_000);
+
+/* Heartbeat — détecte et ferme les connexions zombies (client disparu sans close) */
+setInterval(() => {
+  wss.clients.forEach(ws => {
+    if (ws.isAlive === false) { ws.terminate(); return; }
+    ws.isAlive = false;
+    ws.ping();
+  });
+}, 30_000);
+
 
 console.log(`✅ Taxicab PTT v2 — port ${PORT}${ACCESS_CODE ? ' (code requis)' : ''}`);
