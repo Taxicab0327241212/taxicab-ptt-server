@@ -55,6 +55,21 @@ wss.on('connection', (ws) => {
         ws.send(JSON.stringify({ type: 'error', message: 'Code d\'accès incorrect' }));
         ws.close(); return;
       }
+
+      const targetChannel = msg.channel || 'main';
+      const targetUserId  = (msg.userId || 'Chauffeur').substring(0, 30);
+
+      /* Vérifier si le userId est déjà pris dans ce canal (autre connexion) */
+      const existing = channels.get(targetChannel);
+      if (existing) {
+        for (const [client, info] of existing.entries()) {
+          if (client !== ws && info && info.userId === targetUserId) {
+            ws.send(JSON.stringify({ type: 'error', code: 'VEHICLE_TAKEN', message: 'Véhicule déjà connecté' }));
+            ws.close(); return;
+          }
+        }
+      }
+
       ws.authorized = true;
 
       if (ws.channelId) {
@@ -65,8 +80,8 @@ wss.on('connection', (ws) => {
         }));
       }
 
-      ws.channelId = msg.channel || 'main';
-      ws.userId    = (msg.userId || 'Chauffeur').substring(0, 30);
+      ws.channelId = targetChannel;
+      ws.userId    = targetUserId;
       ws.status    = msg.status || 'disponible';
 
       if (!channels.has(ws.channelId)) channels.set(ws.channelId, new Map());
