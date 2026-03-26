@@ -304,7 +304,7 @@ wss.on('connection', (ws) => {
       const text = (msg.text || '').substring(0, 120);
       if (text) broadcast(ws.channelId, JSON.stringify({
         type: 'text_msg', userId: ws.userId, text, ts: Date.now()
-      }));
+      }), ws); // exclure l'émetteur — il gère son propre historique localement
     }
 
     /* Ping keepalive */
