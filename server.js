@@ -1,13 +1,25 @@
 /**
- * Taxicab PTT — Serveur WebSocket v3
+ * Taxicab PTT — Serveur WebSocket v4
  * Variables d'environnement :
- *   PTT_CODE  → code d'accès requis (vide = pas de code)
+ *   PTT_CODE      → code d'accès requis (vide = pas de code)
+ *   TAXICAB_URL   → URL de base Infomaniak (défaut: https://taxicab.ch)
  */
 
 const WebSocket = require('ws');
 
 const PORT        = process.env.PORT || 3000;
 const ACCESS_CODE = process.env.PTT_CODE || '';
+const API_BASE    = (process.env.TAXICAB_URL || 'https://taxicab.ch').replace(/\/$/, '');
+
+/* ── Helpers API Infomaniak ───────────────────────────────── */
+function apiPost(path, body) {
+  if (!ACCESS_CODE) return;
+  fetch(API_BASE + path, {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify({ ptt_code: ACCESS_CODE, ...body })
+  }).catch(() => {}); // silencieux — ne jamais bloquer le WS
+}
 
 const wss      = new WebSocket.Server({ port: PORT });
 const channels = new Map(); // Map<channelId, Map<ws, {userId, status, listenOnly}>>
@@ -228,6 +240,12 @@ wss.on('connection', (ws) => {
         _saveMsgToCache(ws.channelId, ws);
       }
       ws.talkBuf = [];
+
+      // Historique + push
+      const audioMsgId = ws.currentMsgId;
+      apiPost('/api/ptt_log.php',  { channel: ws.channelId, user_id: ws.userId, type: 'audio', msg_id: audioMsgId });
+      apiPost('/api/ptt_push.php', { channel: ws.channelId, sender_id: ws.userId, type: 'audio' });
+
       ws.currentMsgId = null;
 
       if (channelSpeaker.get(ws.channelId) === ws) {
@@ -302,9 +320,14 @@ wss.on('connection', (ws) => {
     /* Message texte rapide */
     else if (msg.type === 'text_msg') {
       const text = (msg.text || '').substring(0, 120);
-      if (text) broadcast(ws.channelId, JSON.stringify({
-        type: 'text_msg', userId: ws.userId, text, ts: Date.now()
-      }), ws); // exclure l'émetteur — il gère son propre historique localement
+      if (text) {
+        broadcast(ws.channelId, JSON.stringify({
+          type: 'text_msg', userId: ws.userId, text, ts: Date.now()
+        }), ws); // exclure l'émetteur — il gère son propre historique localement
+        // Historique + push
+        apiPost('/api/ptt_log.php',  { channel: ws.channelId, user_id: ws.userId, type: 'text', text });
+        apiPost('/api/ptt_push.php', { channel: ws.channelId, sender_id: ws.userId, type: 'text', text });
+      }
     }
 
     /* Ping keepalive */
